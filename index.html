@@ -57,12 +57,14 @@
     var cv = renderer.domElement;
     document.body.appendChild(cv);
 
+    // Doek ligt bijna plat; camera kijkt er laag overheen zodat plooien
+    // heuvels worden met een golvende silhouetrand (echte 3D-aanblik).
     var camera = new THREE.PerspectiveCamera(30, 2, 0.1, 20);
-    camera.position.set(0, 0.06, 3.2);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0, 0.42, 3.2);
+    camera.lookAt(0, -0.05, 0);
     var scene = new THREE.Scene();
 
-    var TILT = -0.55;
+    var TILT = -1.15;
 
     var uni = {
       uTime:   { value: 0 },
@@ -83,10 +85,10 @@
       // Brede, langgerekte diagonale plooien (zijde) met heel rustig detail.
       'float height(vec2 p, float t) {',
       '  float z = 0.0;',
-      '  z += 0.50 * sin(dot(p, vec2(0.60, 1.60)) - t*0.40 + 0.6*sin(dot(p, vec2(0.30, 0.90))*0.7 + t*0.25));',
-      '  z += 0.25 * sin(dot(p, vec2(0.35, -2.10)) + t*0.28 + 1.7);',
-      '  z += 0.12 * sin(dot(p, vec2(1.30, 2.60)) - t*0.47 + 3.9);',
-      '  z += 0.06 * sin(dot(p, vec2(0.55, 3.60)) + t*0.55);',
+      '  z += 0.50 * sin(dot(p, vec2(1.00, 1.30)) - t*0.40 + 0.6*sin(dot(p, vec2(0.40, 0.90))*0.7 + t*0.25));',
+      '  z += 0.25 * sin(dot(p, vec2(0.80, -1.70)) + t*0.28 + 1.7);',
+      '  z += 0.12 * sin(dot(p, vec2(2.00, 2.20)) - t*0.47 + 3.9);',
+      '  z += 0.06 * sin(dot(p, vec2(1.10, 3.00)) + t*0.55);',
       '  return z;',
       '}',
       // Trage, brede deining van de hele baan (geen normal-impact nodig).
@@ -95,7 +97,7 @@
       '}',
       'void main() {',
       '  vUv = uv;',
-      '  float FREQ = 1.35;',
+      '  float FREQ = 2.1;',
       '  vec2 p = vec2(uv.x * uAspect, uv.y) * FREQ;',
       '  float e = 0.012;',
       '  float h0 = height(p, uTime);',
@@ -104,7 +106,7 @@
       '  vH = h0;',
       '  vec3 pos = vec3(position.x, position.y + sway(p.x, uTime), h0 * uAmp);',
       // NBOOST overdrijft de helling licht voor meer dieptewerking in de belichting.
-      '  float NBOOST = 2.0;',
+      '  float NBOOST = 2.4;',
       '  float dhdx = (hx - h0) / e * (FREQ * uAspect);',
       '  float dhdy = (hy - h0) / e * FREQ;',
       '  vec3 n = normalize(vec3(-dhdx * uAmp * NBOOST, -dhdy * uAmp * NBOOST, 1.0));',
@@ -140,9 +142,9 @@
       '  vec3 silver = mix(vec3(0.52, 0.55, 0.62), vec3(0.93, 0.94, 0.97), smoothstep(-1.0, 1.0, vH));',
       '  vec3 base = mix(warm, silver, uTheme);',
       // Belichting: zachte key + fill, plooi-schaduw, zijdeglans + fresnel-sheen.
-      '  vec3 L1 = normalize(vec3(-0.35, 0.55, 0.75));',
-      '  vec3 L2 = normalize(vec3(0.60, -0.25, 0.50));',
-      '  float dif = 0.55 + 0.45 * max(dot(N, L1), 0.0) + 0.15 * max(dot(N, L2), 0.0);',
+      '  vec3 L1 = normalize(vec3(-0.30, 0.75, 0.55));',
+      '  vec3 L2 = normalize(vec3(0.60, -0.10, 0.50));',
+      '  float dif = 0.30 + 0.70 * max(dot(N, L1), 0.0) + 0.15 * max(dot(N, L2), 0.0);',
       // Plooi-schaduw: warm getint op licht thema (dieprood i.p.v. modderbruin), neutraal op donker.
       '  float occT = smoothstep(-1.1, 0.9, vH);',
       '  vec3 shade = mix(mix(vec3(0.62, 0.40, 0.38), vec3(1.0), occT), vec3(mix(0.58, 1.0, occT)), uTheme);',
@@ -151,11 +153,12 @@
       '  float sheen = pow(max(dot(N, H1), 0.0), 6.0);',
       '  float fres  = pow(1.0 - max(dot(N, V), 0.0), 2.6);',
       '  vec3 col = base * dif * shade;',
-      '  col += vec3(1.0) * (spec * mix(0.20, 0.55, uTheme) + sheen * 0.14);',
+      '  col += vec3(1.0) * (spec * mix(0.20, 0.42, uTheme) + sheen * 0.08);',
       '  col += mix(vec3(1.0, 0.85, 0.70), vec3(0.85, 0.90, 1.0), uTheme) * fres * 0.18;',
       // Zachte fade links (schermruimte) + zachte doekranden boven/onder.
       '  float ax = smoothstep(0.0, 0.16, gl_FragCoord.x / uRes.x);',
-      '  float ay = smoothstep(0.0, 0.035, vUv.y) * (1.0 - smoothstep(0.965, 1.0, vUv.y));',
+      // Verre rand (bovenin beeld) knisperend scherp: dat is de golvende silhouetrand.
+      '  float ay = smoothstep(0.0, 0.02, vUv.y) * (1.0 - smoothstep(0.995, 1.0, vUv.y));',
       '  float a = ax * ay;',
       '  gl_FragColor = vec4(col * a, a);', // premultiplied alpha
       '}'
@@ -167,9 +170,9 @@
       blending: THREE.CustomBlending,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor
     });
-    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 220, 64), mat);
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 220, 128), mat);
     mesh.rotation.x = TILT;
-    mesh.position.y = -0.02;
+    mesh.position.y = -0.34;
     scene.add(mesh);
 
     function frameSize(w, h) {
@@ -177,10 +180,10 @@
       camera.updateProjectionMatrix();
       var fh = 2 * Math.tan(camera.fov * Math.PI / 360) * camera.position.z;
       var fw = fh * camera.aspect;
-      mesh.scale.set(fw * 1.30, (fh * 0.62) / Math.cos(TILT), 1);
+      mesh.scale.set(fw * 1.70, fh * 1.9, 1);
       // Ondergrens zodat er op smalle schermen genoeg plooi in beeld blijft.
-      uni.uAspect.value = Math.max(mesh.scale.x / mesh.scale.y, 4.2);
-      uni.uAmp.value = fh * 0.15;
+      uni.uAspect.value = Math.max(mesh.scale.x / mesh.scale.y, 2.6);
+      uni.uAmp.value = fh * 0.34;
     }
 
     var lastDpr = 0;
