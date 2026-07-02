@@ -1,0 +1,110 @@
+// Fallback-pad: de originele fragment-shader golf (3 gevlochten strengen).
+// Wordt alleen geladen als de Three.js-versie niet kan starten (CDN down of init-fout).
+// window.__lpLegacyWave(fallbackEl) maakt zijn eigen canvas en beheert zijn eigen loop.
+window.__lpLegacyWave = function (fb) {
+  var cv = document.createElement('canvas');
+  cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .8s ease;';
+  document.body.appendChild(cv);
+  var gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'low-power' });
+  if (!gl) { fb.style.opacity = '1'; return; }
+
+  var raf = null, ready = 0;
+  function showCanvas() { cv.style.opacity = '1'; fb.style.opacity = '0'; }
+  function showFallback() { cv.style.opacity = '0'; fb.style.opacity = '1'; }
+
+  cv.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (raf) cancelAnimationFrame(raf); showFallback(); });
+  cv.addEventListener('webglcontextrestored', function () { init(); });
+
+  var prog, uR, uT, start;
+  function compile(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  var VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }';
+  var FS = ''
+    + 'precision highp float;\n'
+    + 'uniform vec2 r; uniform float t;\n'
+    + 'void strand(vec2 uv, float ph, float grad, out float cov, out float z, out vec3 col){\n'
+    + '  float x = uv.x;\n'
+    + '  float base = 0.5 + 0.15*sin(x*1.15 - t*0.16) + 0.06*sin(x*2.1 + t*0.10);\n'
+    + '  float ang = x*1.35 - t*0.26 + ph;\n'
+    + '  float c = base + 0.20*sin(ang);\n'
+    + '  z = cos(ang);\n'
+    + '  float d = 0.048 + 0.013*z;\n'
+    + '  float s = (uv.y - c)/d;\n'
+    + '  cov = 1.0 - smoothstep(0.90, 1.0, abs(s));\n'
+    + '  vec3 yellow = vec3(0.992,0.725,0.075);\n'
+    + '  vec3 orange = vec3(0.961,0.510,0.122);\n'
+    + '  vec3 red    = vec3(0.894,0.133,0.098);\n'
+    + '  float g = clamp(grad, 0.0, 1.0);\n'
+    + '  vec3 cc = mix(yellow, orange, smoothstep(0.05,0.5,g));\n'
+    + '  col = mix(cc, red, smoothstep(0.5,0.95,g));\n'
+    + '  float hl = exp(-pow((s + 0.35)*3.2, 2.0));\n'
+    + '  col = mix(col, vec3(1.0), hl*0.38);\n'
+    + '  float hl2 = exp(-pow((s - 0.72)*5.0, 2.0));\n'
+    + '  col = mix(col, vec3(1.0), hl2*0.16);\n'
+    + '}\n'
+    + 'void main(){\n'
+    + '  vec2 px = gl_FragCoord.xy / r.xy;\n'
+    + '  vec2 uv = px; uv.x *= r.x / r.y * 0.36;\n'
+    + '  float grad = 0.5 + 0.5*sin(uv.x*0.9 - t*0.12);\n'
+    + '  float cA,cB,cC,zA,zB,zC; vec3 kA,kB,kC;\n'
+    + '  strand(uv, 0.0,       clamp(grad+0.30,0.0,1.0), cA, zA, kA);\n'
+    + '  strand(uv, 2.0943951, grad,                      cB, zB, kB);\n'
+    + '  strand(uv, 4.1887902, clamp(grad-0.30,0.0,1.0), cC, zC, kC);\n'
+    + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
+    + '  if(zB>zC){ vec3 tk=kB; kB=kC; kC=tk; float tf=cB; cB=cC; cC=tf; tf=zB; zB=zC; zC=tf; }\n'
+    + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
+    + '  float fade = smoothstep(0.0, 0.16, px.x);\n'
+    + '  vec3 rgb = vec3(0.0); float a = 0.0; float ca;\n'
+    + '  ca = cA*fade; rgb = kA*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  ca = cB*fade; rgb = kB*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  ca = cC*fade; rgb = kC*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  gl_FragColor = vec4(rgb, a);\n'
+    + '}\n';
+
+  function syncSize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.round(cv.clientWidth * dpr));
+    var h = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; gl.viewport(0, 0, w, h); }
+  }
+
+  function init() {
+    try {
+      prog = gl.createProgram();
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link');
+      gl.useProgram(prog);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      uR = gl.getUniformLocation(prog, 'r');
+      uT = gl.getUniformLocation(prog, 't');
+      gl.clearColor(0, 0, 0, 0);
+      start = performance.now();
+      ready = 0;
+      raf = requestAnimationFrame(frame);
+    } catch (e) { showFallback(); }
+  }
+
+  function frame(now) {
+    syncSize();
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform2f(uR, cv.width, cv.height);
+    gl.uniform1f(uT, (now - start) / 1000);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    ready++;
+    if (ready === 3) showCanvas();
+    raf = requestAnimationFrame(frame);
+  }
+
+  init();
+};
