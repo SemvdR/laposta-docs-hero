@@ -103,6 +103,9 @@
       '  vUv = uv;',
       '  float FREQ = 1.2;',
       '  vec2 p = vec2(uv.x * uAspect, uv.y) * FREQ;',
+      // Trage advectie: het golfpatroon drift zijwaarts langs het lint,
+      // zodat het doek zichtbaar stroomt i.p.v. alleen op en neer te deinen.
+      '  p.x -= uTime * 0.55;',
       '  float e = 0.012;',
       '  float h0 = fbm(p, uTime);',
       '  float hx = fbm(p + vec2(e, 0.0), uTime);',
@@ -139,31 +142,32 @@
       '  vec3 red    = vec3(0.894, 0.133, 0.098);',
       '  vec3 orange = vec3(0.961, 0.510, 0.122);',
       '  vec3 yellow = vec3(0.992, 0.725, 0.075);',
+      // Brede zuivere kleurzones met smalle overgangen: rood, oranje en geel
+      // blijven als echte merkkleuren leesbaar i.p.v. overal half-gemengd.
       '  float g = clamp(vUv.x * 0.80 + (1.0 - vUv.y) * 0.20 + 0.06 * vH, 0.0, 1.0);',
-      '  vec3 warm = mix(red, orange, smoothstep(0.22, 0.48, g));',
-      '  warm = mix(warm, yellow, smoothstep(0.55, 0.85, g));',
-      // Zilverwit doek voor donker thema.
-      '  vec3 s0 = vec3(1.00, 1.00, 1.00);',
-      '  vec3 s1 = vec3(0.91, 0.91, 0.92);',
-      '  vec3 s2 = vec3(0.63, 0.64, 0.67);',
-      '  vec3 silver = mix(s0, s1, smoothstep(0.22, 0.48, g));',
-      '  silver = mix(silver, s2, smoothstep(0.55, 0.85, g));',
-      '  vec3 base = mix(warm, silver, uTheme);',
+      '  vec3 warm = mix(red, orange, smoothstep(0.30, 0.44, g));',
+      '  warm = mix(warm, yellow, smoothstep(0.60, 0.74, g));',
       // Studio-belichting: hoge ambient (kleuren blijven verzadigd), zachte key,
       // rim-licht op de vouwranden, milde zijdeglans.
       '  vec3 L1 = normalize(vec3(0.35, 0.65, 0.60));',
       '  float dif = 0.72 + 0.28 * max(dot(N, L1), 0.0);',
       '  float occT = smoothstep(-1.1, 0.9, vH);',
-      // Schaduw op licht thema = hue-shift naar dieprood (blijft Laposta, geen bruin),
-      // met maar milde donkering; donker thema neutraal.
-      '  base = mix(base, mix(base, red * 0.92, (1.0 - occT) * 0.55), 1.0 - uTheme);',
-      '  vec3 shade = mix(vec3(mix(0.84, 1.0, occT)), vec3(mix(0.72, 1.0, occT)), uTheme);',
       '  vec3 H1 = normalize(L1 + V);',
       '  float spec  = pow(max(dot(N, H1), 0.0), 48.0);',
       '  float rim   = pow(1.0 - max(dot(N, V), 0.0), 3.0);',
-      '  vec3 col = base * dif * shade * back;',
-      '  col += vec3(1.0) * spec * mix(0.16, 0.38, uTheme);',
-      '  col += mix(vec3(1.0, 0.90, 0.80), vec3(0.90, 0.93, 1.0), uTheme) * rim * 0.30;',
+      // Licht thema: schaduw = hue-shift naar dieprood (blijft Laposta, geen bruin).
+      '  vec3 warmShadowed = mix(warm, red * 0.92, (1.0 - occT) * 0.55);',
+      '  vec3 litLight = warmShadowed * dif * mix(0.84, 1.0, occT) * back;',
+      '  litLight += vec3(1.0) * spec * 0.16;',
+      '  litLight += vec3(1.0, 0.90, 0.80) * rim * 0.30;',
+      // Donker thema: nachtzwart zijde met gloeiende Laposta-sheen over
+      // plooiruggen (crest), vouwranden (rim) en glanslichten (spec).
+      '  vec3 darkBase = mix(vec3(0.13, 0.10, 0.12), vec3(0.26, 0.21, 0.23), occT);',
+      '  float crest = smoothstep(0.05, 1.00, vH);',
+      '  vec3 litDark = darkBase * (0.70 + 0.30 * max(dot(N, L1), 0.0)) * back;',
+      '  litDark += warm * (rim * 0.32 + crest * 0.58);',
+      '  litDark += mix(warm, vec3(1.0), 0.55) * spec * 0.55;',
+      '  vec3 col = mix(litLight, litDark, uTheme);',
       // Dromerige fade aan beide zijkanten (schermruimte) + strakke doekranden met AA.
       '  float sx = gl_FragCoord.x / uRes.x;',
       '  float ax = smoothstep(0.0, 0.13, sx) * (1.0 - smoothstep(0.87, 1.0, sx));',
