@@ -6,7 +6,7 @@
 <title>Laposta wave</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #ffffff; }
-  canvas { display: block; width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; opacity: 0; transition: opacity .8s ease; }
 </style>
 </head>
 <body>
@@ -82,7 +82,8 @@ if (gl) {
   const loc = gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
   const uR = gl.getUniformLocation(prog,'r'), uT = gl.getUniformLocation(prog,'t');
   const start = performance.now();
-  function frame(now){ gl.uniform2f(uR, cv.width, cv.height); gl.uniform1f(uT, (now-start)/1000.0); gl.drawArrays(gl.TRIANGLES,0,6); requestAnimationFrame(frame); }
+  let first=true;
+  function frame(now){ if(first){ cv.style.opacity=1; first=false; } gl.uniform2f(uR, cv.width, cv.height); gl.uniform1f(uT, (now-start)/1000.0); gl.drawArrays(gl.TRIANGLES,0,6); requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
 } else {
   document.body.style.background = 'linear-gradient(100deg,#FDB913,#F5821F,#E42219)';
