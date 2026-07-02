@@ -127,7 +127,7 @@
       '  float hy = fbm(p + vec2(0.0, e), uTime);',
       '  vH = h0 * 0.62;', // genormaliseerd richting -1..1 voor kleur/schaduw
       // Subtiele muis-bolling: breed en zacht, bewust zonder normal-impact.
-      '  float md2 = pow(uv.x - uMouse.x, 2.0) / 0.020 + pow(uv.y - uMouse.y, 2.0) / 0.060;',
+      '  float md2 = pow(uv.x - uMouse.x, 2.0) / 0.028 + pow(uv.y - uMouse.y, 2.0) / 0.080;',
       '  vec3 pos = vec3(position.xy, h0 * uAmp + uMouseStr * exp(-md2));',
       // NBOOST overdrijft de helling licht voor meer dieptewerking in de belichting.
       '  float NBOOST = 1.5;',
@@ -333,7 +333,7 @@
       mouse.y += (mouse.ty - mouse.y) * Math.min(1, dt * 2.2);
       mouse.str += (mouse.tstr - mouse.str) * Math.min(1, dt * 1.5);
       uni.uMouse.value.set(mouse.x, mouse.y);
-      uni.uMouseStr.value = mouse.str * 0.8 * SLOW;
+      uni.uMouseStr.value = mouse.str * 1.4 * SLOW;
       renderer.render(scene, camera);
       frames++;
       if (frames === 10) showCanvas(); // leeg laden, pas tonen na stabiele frames
