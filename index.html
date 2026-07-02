@@ -145,9 +145,12 @@
       // Studio-belichting: hoge ambient (kleuren blijven verzadigd), zachte key,
       // rim-licht op de vouwranden, milde zijdeglans.
       '  vec3 L1 = normalize(vec3(0.35, 0.65, 0.60));',
-      '  float dif = 0.68 + 0.32 * max(dot(N, L1), 0.0);',
+      '  float dif = 0.72 + 0.28 * max(dot(N, L1), 0.0);',
       '  float occT = smoothstep(-1.1, 0.9, vH);',
-      '  vec3 shade = mix(mix(vec3(0.82, 0.62, 0.56), vec3(1.0), occT), vec3(mix(0.72, 1.0, occT)), uTheme);',
+      // Schaduw op licht thema = hue-shift naar dieprood (blijft Laposta, geen bruin),
+      // met maar milde donkering; donker thema neutraal.
+      '  base = mix(base, mix(base, red * 0.92, (1.0 - occT) * 0.55), 1.0 - uTheme);',
+      '  vec3 shade = mix(vec3(mix(0.84, 1.0, occT)), vec3(mix(0.72, 1.0, occT)), uTheme);',
       '  vec3 H1 = normalize(L1 + V);',
       '  float spec  = pow(max(dot(N, H1), 0.0), 48.0);',
       '  float rim   = pow(1.0 - max(dot(N, V), 0.0), 3.0);',
@@ -165,7 +168,9 @@
 
     var mat = new THREE.ShaderMaterial({
       uniforms: uni, vertexShader: VS, fragmentShader: FS,
-      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      // Depth aan: overlappende lagen van het doek dekken elkaar correct af
+      // (zonder depth mengen ze in polygon-volgorde en 'schuiven ze door elkaar').
+      transparent: true, depthWrite: true, depthTest: true, side: THREE.DoubleSide,
       blending: THREE.CustomBlending,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor
     });
