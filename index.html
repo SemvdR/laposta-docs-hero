@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Laposta wave</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #ffffff; }
-  /* Stille fallback: subtiele statische golf (data-URI); nooit een fel blok */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
   #fallback {
     position: absolute; inset: 0; opacity: 1; transition: opacity .6s ease;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 220' preserveAspectRatio='none'%3E%3Cpath d='M0,110 C200,60 400,150 600,105 C800,60 1000,150 1200,100' fill='none' stroke='%23F5821F' stroke-width='26' stroke-linecap='round' opacity='0.55'/%3E%3Cpath d='M0,130 C220,85 420,165 620,125 C820,85 1020,160 1200,120' fill='none' stroke='%23FDB913' stroke-width='18' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E") center/100% 100% no-repeat;
@@ -21,19 +20,14 @@
 (function () {
   var cv = document.getElementById('c');
   var fb = document.getElementById('fallback');
-  var gl = cv.getContext('webgl', { antialias: true, powerPreference: 'low-power' });
-  if (!gl) return; // fallback blijft staan: stille statische golf
+  var gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'low-power' });
+  if (!gl) return;
 
   var raf = null, ready = 0;
-
   function showCanvas() { cv.style.opacity = '1'; fb.style.opacity = '0'; }
   function showFallback() { cv.style.opacity = '0'; fb.style.opacity = '1'; }
 
-  cv.addEventListener('webglcontextlost', function (e) {
-    e.preventDefault();
-    if (raf) cancelAnimationFrame(raf);
-    showFallback(); // stil terugvallen, geen flikkering
-  });
+  cv.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (raf) cancelAnimationFrame(raf); showFallback(); });
   cv.addEventListener('webglcontextrestored', function () { init(); });
 
   var prog, uR, uT, start;
@@ -47,7 +41,7 @@
   var FS = ''
     + 'precision highp float;\n'
     + 'uniform vec2 r; uniform float t;\n'
-    + 'void strand(vec2 uv, float px, float ph, float grad, out float cov, out float z, out vec3 col){\n'
+    + 'void strand(vec2 uv, float ph, float grad, out float cov, out float z, out vec3 col){\n'
     + '  float x = uv.x;\n'
     + '  float base = 0.5 + 0.15*sin(x*1.15 - t*0.16) + 0.06*sin(x*2.1 + t*0.10);\n'
     + '  float ang = x*1.35 - t*0.26 + ph;\n'
@@ -62,7 +56,6 @@
     + '  float g = clamp(grad, 0.0, 1.0);\n'
     + '  vec3 cc = mix(yellow, orange, smoothstep(0.05,0.5,g));\n'
     + '  col = mix(cc, red, smoothstep(0.5,0.95,g));\n'
-    + '  col = mix(col, vec3(1.0), 0.14*(1.0 - z)*0.5);\n'
     + '  float hl = exp(-pow((s + 0.35)*3.2, 2.0));\n'
     + '  col = mix(col, vec3(1.0), hl*0.38);\n'
     + '  float hl2 = exp(-pow((s - 0.72)*5.0, 2.0));\n'
@@ -73,18 +66,19 @@
     + '  vec2 uv = px; uv.x *= r.x / r.y * 0.36;\n'
     + '  float grad = 0.5 + 0.5*sin(uv.x*0.9 - t*0.12);\n'
     + '  float cA,cB,cC,zA,zB,zC; vec3 kA,kB,kC;\n'
-    + '  strand(uv, px.x, 0.0,       clamp(grad+0.30,0.0,1.0), cA, zA, kA);\n'
-    + '  strand(uv, px.x, 2.0943951, grad,                      cB, zB, kB);\n'
-    + '  strand(uv, px.x, 4.1887902, clamp(grad-0.30,0.0,1.0), cC, zC, kC);\n'
+    + '  strand(uv, 0.0,       clamp(grad+0.30,0.0,1.0), cA, zA, kA);\n'
+    + '  strand(uv, 2.0943951, grad,                      cB, zB, kB);\n'
+    + '  strand(uv, 4.1887902, clamp(grad-0.30,0.0,1.0), cC, zC, kC);\n'
     + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
     + '  if(zB>zC){ vec3 tk=kB; kB=kC; kC=tk; float tf=cB; cB=cC; cC=tf; tf=zB; zB=zC; zC=tf; }\n'
     + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
     + '  float fade = smoothstep(0.0, 0.16, px.x);\n'
-    + '  vec3 col = vec3(1.0);\n'
-    + '  col = mix(col, kA, cA*fade);\n'
-    + '  col = mix(col, kB, cB*fade);\n'
-    + '  col = mix(col, kC, cC*fade);\n'
-    + '  gl_FragColor = vec4(col, 1.0);\n'
+    + '  // transparant composieten (premultiplied): golf neemt de pagina-achtergrond aan\n'
+    + '  vec3 rgb = vec3(0.0); float a = 0.0; float ca;\n'
+    + '  ca = cA*fade; rgb = kA*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  ca = cB*fade; rgb = kB*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  ca = cC*fade; rgb = kC*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
+    + '  gl_FragColor = vec4(rgb, a);\n'
     + '}\n';
 
   function syncSize() {
@@ -110,6 +104,7 @@
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
       uR = gl.getUniformLocation(prog, 'r');
       uT = gl.getUniformLocation(prog, 't');
+      gl.clearColor(0, 0, 0, 0);
       start = performance.now();
       ready = 0;
       raf = requestAnimationFrame(frame);
@@ -117,12 +112,13 @@
   }
 
   function frame(now) {
-    syncSize(); // vangt layout-wijzigingen zonder resize-event
+    syncSize();
+    gl.clear(gl.COLOR_BUFFER_BIT);
     gl.uniform2f(uR, cv.width, cv.height);
     gl.uniform1f(uT, (now - start) / 1000);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     ready++;
-    if (ready === 3) showCanvas(); // pas tonen na 3 stabiele frames
+    if (ready === 3) showCanvas();
     raf = requestAnimationFrame(frame);
   }
 
