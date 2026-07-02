@@ -63,7 +63,7 @@ if (gl) {
     '  if(zB>zC){ vec3 tc=cB; cB=cC; cC=tc; float tf=covB; covB=covC; covC=tf; tf=zB; zB=zC; zC=tf; }',
     '  if(zA>zB){ vec3 tc=cA; cA=cB; cB=tc; float tf=covA; covA=covB; covB=tf; tf=zA; zA=zB; zB=tf; }',
     '  // elegante fade aan de uiteinden: het lint lost op in wit',
-    '  float fade = 1.0;',
+    '  float fade = smoothstep(0.0, 0.16, px.x);',
     '  vec3 col = vec3(1.0);',
     '  col = mix(col, cA, covA*fade);',
     '  col = mix(col, cB, covB*fade);',
