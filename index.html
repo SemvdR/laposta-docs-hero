@@ -10,119 +10,253 @@
     position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 220' preserveAspectRatio='none'%3E%3Cpath d='M0,110 C200,60 400,150 600,105 C800,60 1000,150 1200,100' fill='none' stroke='%23F5821F' stroke-width='26' stroke-linecap='round' opacity='0.55'/%3E%3Cpath d='M0,130 C220,85 420,165 620,125 C820,85 1020,160 1200,120' fill='none' stroke='%23FDB913' stroke-width='18' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E") center/100% 100% no-repeat;
   }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .8s ease; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.1s ease; }
 </style>
 </head>
 <body>
 <div id="fallback"></div>
-<canvas id="c"></canvas>
 <script>
 (function () {
-  var cv = document.getElementById('c');
   var fb = document.getElementById('fallback');
-  var gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'low-power' });
-  if (!gl) { fb.style.opacity = '1'; return; }
+  var started = false;
 
-  var raf = null, ready = 0;
-  function showCanvas() { cv.style.opacity = '1'; fb.style.opacity = '0'; }
-  function showFallback() { cv.style.opacity = '0'; fb.style.opacity = '1'; }
-
-  cv.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (raf) cancelAnimationFrame(raf); showFallback(); });
-  cv.addEventListener('webglcontextrestored', function () { init(); });
-
-  var prog, uR, uT, start;
-  function compile(type, src) {
-    var s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-    return s;
-  }
-  var VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }';
-  var FS = ''
-    + 'precision highp float;\n'
-    + 'uniform vec2 r; uniform float t;\n'
-    + 'void strand(vec2 uv, float ph, float grad, out float cov, out float z, out vec3 col){\n'
-    + '  float x = uv.x;\n'
-    + '  float base = 0.5 + 0.15*sin(x*1.15 - t*0.16) + 0.06*sin(x*2.1 + t*0.10);\n'
-    + '  float ang = x*1.35 - t*0.26 + ph;\n'
-    + '  float c = base + 0.20*sin(ang);\n'
-    + '  z = cos(ang);\n'
-    + '  float d = 0.048 + 0.013*z;\n'
-    + '  float s = (uv.y - c)/d;\n'
-    + '  cov = 1.0 - smoothstep(0.90, 1.0, abs(s));\n'
-    + '  vec3 yellow = vec3(0.992,0.725,0.075);\n'
-    + '  vec3 orange = vec3(0.961,0.510,0.122);\n'
-    + '  vec3 red    = vec3(0.894,0.133,0.098);\n'
-    + '  float g = clamp(grad, 0.0, 1.0);\n'
-    + '  vec3 cc = mix(yellow, orange, smoothstep(0.05,0.5,g));\n'
-    + '  col = mix(cc, red, smoothstep(0.5,0.95,g));\n'
-    + '  float hl = exp(-pow((s + 0.35)*3.2, 2.0));\n'
-    + '  col = mix(col, vec3(1.0), hl*0.38);\n'
-    + '  float hl2 = exp(-pow((s - 0.72)*5.0, 2.0));\n'
-    + '  col = mix(col, vec3(1.0), hl2*0.16);\n'
-    + '}\n'
-    + 'void main(){\n'
-    + '  vec2 px = gl_FragCoord.xy / r.xy;\n'
-    + '  vec2 uv = px; uv.x *= r.x / r.y * 0.36;\n'
-    + '  float grad = 0.5 + 0.5*sin(uv.x*0.9 - t*0.12);\n'
-    + '  float cA,cB,cC,zA,zB,zC; vec3 kA,kB,kC;\n'
-    + '  strand(uv, 0.0,       clamp(grad+0.30,0.0,1.0), cA, zA, kA);\n'
-    + '  strand(uv, 2.0943951, grad,                      cB, zB, kB);\n'
-    + '  strand(uv, 4.1887902, clamp(grad-0.30,0.0,1.0), cC, zC, kC);\n'
-    + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
-    + '  if(zB>zC){ vec3 tk=kB; kB=kC; kC=tk; float tf=cB; cB=cC; cC=tf; tf=zB; zB=zC; zC=tf; }\n'
-    + '  if(zA>zB){ vec3 tk=kA; kA=kB; kB=tk; float tf=cA; cA=cB; cB=tf; tf=zA; zA=zB; zB=tf; }\n'
-    + '  float fade = smoothstep(0.0, 0.16, px.x);\n'
-    + '  // transparant composieten (premultiplied): golf neemt de pagina-achtergrond aan\n'
-    + '  vec3 rgb = vec3(0.0); float a = 0.0; float ca;\n'
-    + '  ca = cA*fade; rgb = kA*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
-    + '  ca = cB*fade; rgb = kB*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
-    + '  ca = cC*fade; rgb = kC*ca + rgb*(1.0-ca); a = ca + a*(1.0-ca);\n'
-    + '  gl_FragColor = vec4(rgb, a);\n'
-    + '}\n';
-
-  function syncSize() {
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var w = Math.max(1, Math.round(cv.clientWidth * dpr));
-    var h = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; gl.viewport(0, 0, w, h); }
+  function loadScript(src, onload, onerror) {
+    var s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = onload; s.onerror = onerror;
+    document.head.appendChild(s);
   }
 
-  function init() {
+  // Laatste redmiddel-keten: Three.js-doek -> legacy shader-golf -> statische SVG.
+  function startLegacy() {
+    if (started) return; started = true;
+    loadScript('wave-legacy.js', function () {
+      if (window.__lpLegacyWave) window.__lpLegacyWave(fb); else fb.style.opacity = '1';
+    }, function () { fb.style.opacity = '1'; });
+  }
+
+  function tryThree() {
+    if (started) return;
+    if (!window.THREE) { startLegacy(); return; }
+    try { startThree(); started = true; }
+    catch (e) { startLegacy(); }
+  }
+
+  // Three.js via CDN met fallback-keten: cdnjs -> jsdelivr -> legacy.
+  loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js', tryThree, function () {
+    loadScript('https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js', tryThree, startLegacy);
+  });
+  // Vangnet voor een CDN die blijft hangen (geen error, geen load).
+  setTimeout(function () { if (!started) tryThree(); }, 6000);
+
+  function startThree() {
+    var renderer = new THREE.WebGLRenderer({
+      antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'low-power'
+    });
+    renderer.setClearColor(0x000000, 0);
+    var cv = renderer.domElement;
+    document.body.appendChild(cv);
+
+    var camera = new THREE.PerspectiveCamera(30, 2, 0.1, 20);
+    camera.position.set(0, 0.06, 3.2);
+    camera.lookAt(0, 0, 0);
+    var scene = new THREE.Scene();
+
+    var TILT = -0.55;
+
+    var uni = {
+      uTime:   { value: 0 },
+      uRes:    { value: new THREE.Vector2(1, 1) },
+      uAspect: { value: 2 },
+      uAmp:    { value: 0.16 },
+      uTheme:  { value: 0 }
+    };
+
+    var VS = [
+      'uniform float uTime;',
+      'uniform float uAspect;',
+      'uniform float uAmp;',
+      'varying vec3 vN;',
+      'varying vec3 vPos;',
+      'varying vec2 vUv;',
+      'varying float vH;',
+      // Brede, langgerekte diagonale plooien (zijde) met heel rustig detail.
+      'float height(vec2 p, float t) {',
+      '  float z = 0.0;',
+      '  z += 0.50 * sin(dot(p, vec2(0.60, 1.60)) - t*0.40 + 0.6*sin(dot(p, vec2(0.30, 0.90))*0.7 + t*0.25));',
+      '  z += 0.25 * sin(dot(p, vec2(0.35, -2.10)) + t*0.28 + 1.7);',
+      '  z += 0.12 * sin(dot(p, vec2(1.30, 2.60)) - t*0.47 + 3.9);',
+      '  z += 0.06 * sin(dot(p, vec2(0.55, 3.60)) + t*0.55);',
+      '  return z;',
+      '}',
+      // Trage, brede deining van de hele baan (geen normal-impact nodig).
+      'float sway(float x, float t) {',
+      '  return 0.09 * sin(x*0.45 - t*0.33) + 0.05 * sin(x*0.85 + t*0.21 + 2.4);',
+      '}',
+      'void main() {',
+      '  vUv = uv;',
+      '  float FREQ = 1.35;',
+      '  vec2 p = vec2(uv.x * uAspect, uv.y) * FREQ;',
+      '  float e = 0.012;',
+      '  float h0 = height(p, uTime);',
+      '  float hx = height(p + vec2(e, 0.0), uTime);',
+      '  float hy = height(p + vec2(0.0, e), uTime);',
+      '  vH = h0;',
+      '  vec3 pos = vec3(position.x, position.y + sway(p.x, uTime), h0 * uAmp);',
+      // NBOOST overdrijft de helling licht voor meer dieptewerking in de belichting.
+      '  float NBOOST = 2.0;',
+      '  float dhdx = (hx - h0) / e * (FREQ * uAspect);',
+      '  float dhdy = (hy - h0) / e * FREQ;',
+      '  vec3 n = normalize(vec3(-dhdx * uAmp * NBOOST, -dhdy * uAmp * NBOOST, 1.0));',
+      '  vN = normalize(normalMatrix * n);',
+      '  vec4 mv = modelViewMatrix * vec4(pos, 1.0);',
+      '  vPos = mv.xyz;',
+      '  gl_Position = projectionMatrix * mv;',
+      '}'
+    ].join('\n');
+
+    var FS = [
+      'precision highp float;',
+      'uniform vec2 uRes;',
+      'uniform float uTime;',
+      'uniform float uTheme;',
+      'varying vec3 vN;',
+      'varying vec3 vPos;',
+      'varying vec2 vUv;',
+      'varying float vH;',
+      'void main() {',
+      '  vec3 N = normalize(vN);',
+      '  if (!gl_FrontFacing) N = -N;',
+      '  vec3 V = normalize(-vPos);',
+      // Laposta-palet, zacht in elkaar overlopend en meebewegend met de plooien.
+      '  vec3 red    = vec3(0.894, 0.133, 0.098);',
+      '  vec3 orange = vec3(0.961, 0.510, 0.122);',
+      '  vec3 yellow = vec3(0.992, 0.725, 0.075);',
+      '  float g = clamp(vUv.x + 0.10*sin(uTime*0.05 + vUv.y*1.5) + 0.16*vH, 0.0, 1.0);',
+      '  vec3 warm = mix(red, orange, smoothstep(0.06, 0.52, g));',
+      '  warm = mix(warm, yellow, smoothstep(0.50, 0.96, g));',
+      '  warm = mix(warm, vec3(1.0, 0.93, 0.85), 0.04);',
+      // Zilverwit doek voor donker thema (ElevenLabs-stijl).
+      '  vec3 silver = mix(vec3(0.52, 0.55, 0.62), vec3(0.93, 0.94, 0.97), smoothstep(-1.0, 1.0, vH));',
+      '  vec3 base = mix(warm, silver, uTheme);',
+      // Belichting: zachte key + fill, plooi-schaduw, zijdeglans + fresnel-sheen.
+      '  vec3 L1 = normalize(vec3(-0.35, 0.55, 0.75));',
+      '  vec3 L2 = normalize(vec3(0.60, -0.25, 0.50));',
+      '  float dif = 0.55 + 0.45 * max(dot(N, L1), 0.0) + 0.15 * max(dot(N, L2), 0.0);',
+      // Plooi-schaduw: warm getint op licht thema (dieprood i.p.v. modderbruin), neutraal op donker.
+      '  float occT = smoothstep(-1.1, 0.9, vH);',
+      '  vec3 shade = mix(mix(vec3(0.62, 0.40, 0.38), vec3(1.0), occT), vec3(mix(0.58, 1.0, occT)), uTheme);',
+      '  vec3 H1 = normalize(L1 + V);',
+      '  float spec  = pow(max(dot(N, H1), 0.0), 42.0);',
+      '  float sheen = pow(max(dot(N, H1), 0.0), 6.0);',
+      '  float fres  = pow(1.0 - max(dot(N, V), 0.0), 2.6);',
+      '  vec3 col = base * dif * shade;',
+      '  col += vec3(1.0) * (spec * mix(0.20, 0.55, uTheme) + sheen * 0.14);',
+      '  col += mix(vec3(1.0, 0.85, 0.70), vec3(0.85, 0.90, 1.0), uTheme) * fres * 0.18;',
+      // Zachte fade links (schermruimte) + zachte doekranden boven/onder.
+      '  float ax = smoothstep(0.0, 0.16, gl_FragCoord.x / uRes.x);',
+      '  float ay = smoothstep(0.0, 0.035, vUv.y) * (1.0 - smoothstep(0.965, 1.0, vUv.y));',
+      '  float a = ax * ay;',
+      '  gl_FragColor = vec4(col * a, a);', // premultiplied alpha
+      '}'
+    ].join('\n');
+
+    var mat = new THREE.ShaderMaterial({
+      uniforms: uni, vertexShader: VS, fragmentShader: FS,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor
+    });
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 220, 64), mat);
+    mesh.rotation.x = TILT;
+    mesh.position.y = -0.02;
+    scene.add(mesh);
+
+    function frameSize(w, h) {
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      var fh = 2 * Math.tan(camera.fov * Math.PI / 360) * camera.position.z;
+      var fw = fh * camera.aspect;
+      mesh.scale.set(fw * 1.30, (fh * 0.62) / Math.cos(TILT), 1);
+      // Ondergrens zodat er op smalle schermen genoeg plooi in beeld blijft.
+      uni.uAspect.value = Math.max(mesh.scale.x / mesh.scale.y, 4.2);
+      uni.uAmp.value = fh * 0.15;
+    }
+
+    var lastDpr = 0;
+    function syncSize() {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (!w || !h) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+      if (cv.width !== pw || cv.height !== ph || dpr !== lastDpr) {
+        lastDpr = dpr;
+        renderer.setPixelRatio(dpr);
+        renderer.setSize(w, h, false);
+        uni.uRes.value.set(pw, ph);
+        frameSize(w, h);
+      }
+    }
+
+    // Thema: 0 = licht (Laposta-kleuren), 1 = donker (zilverwit doek).
+    // Init via ?theme= of prefers-color-scheme; live om te schakelen via postMessage
+    // ({type:'lp-wave-theme', theme:'dark'|'light'}) vanuit de host-pagina.
+    var themeTarget = (function () {
+      try {
+        var q = new URLSearchParams(location.search).get('theme');
+        if (q === 'dark') return 1;
+        if (q === 'light') return 0;
+        return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 1 : 0;
+      } catch (e) { return 0; }
+    })();
+    uni.uTheme.value = themeTarget;
     try {
-      prog = gl.createProgram();
-      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
-      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link');
-      gl.useProgram(prog);
-      var buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
-      var loc = gl.getAttribLocation(prog, 'p');
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-      uR = gl.getUniformLocation(prog, 'r');
-      uT = gl.getUniformLocation(prog, 't');
-      gl.clearColor(0, 0, 0, 0);
-      start = performance.now();
-      ready = 0;
-      raf = requestAnimationFrame(frame);
-    } catch (e) { showFallback(); }
-  }
+      var mq = matchMedia('(prefers-color-scheme: dark)');
+      var onMq = function (e) { themeTarget = e.matches ? 1 : 0; };
+      if (mq.addEventListener) mq.addEventListener('change', onMq);
+    } catch (e) {}
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (d && d.type === 'lp-wave-theme' && (d.theme === 'dark' || d.theme === 'light')) {
+        themeTarget = d.theme === 'dark' ? 1 : 0;
+      }
+    });
+    try { if (parent !== window) parent.postMessage({ type: 'lp-wave-ready' }, '*'); } catch (e) {}
 
-  function frame(now) {
+    var SLOW = matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.06 : 1;
+    var raf = null, frames = 0, tAccum = 0, last = 0;
+
+    function showCanvas() { cv.style.opacity = '1'; fb.style.opacity = '0'; }
+    function showFallback() { cv.style.opacity = '0'; fb.style.opacity = '1'; }
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    function start() { if (!raf) { last = 0; raf = requestAnimationFrame(loop); } }
+
+    function loop(now) {
+      raf = requestAnimationFrame(loop);
+      var dt = last ? Math.min((now - last) / 1000, 0.05) : 0.016;
+      last = now;
+      tAccum += dt * SLOW;
+      syncSize();
+      uni.uTheme.value += (themeTarget - uni.uTheme.value) * Math.min(1, dt * 2.5);
+      uni.uTime.value = tAccum * 0.28;
+      renderer.render(scene, camera);
+      frames++;
+      if (frames === 3) showCanvas(); // leeg laden, pas tonen na een paar stabiele frames
+    }
+
+    cv.addEventListener('webglcontextlost', function (e) {
+      e.preventDefault(); stop(); showFallback();
+    });
+    cv.addEventListener('webglcontextrestored', function () {
+      frames = 0; start(); // Three herbouwt zijn GL-state zelf bij de eerstvolgende render
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop(); else start();
+    });
+
     syncSize();
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform2f(uR, cv.width, cv.height);
-    gl.uniform1f(uT, (now - start) / 1000);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    ready++;
-    if (ready === 3) showCanvas();
-    raf = requestAnimationFrame(frame);
+    start();
   }
-
-  init();
 })();
 </script>
 </body>
